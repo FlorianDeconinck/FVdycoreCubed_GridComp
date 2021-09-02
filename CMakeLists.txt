@@ -31,15 +31,15 @@ esma_add_library (${this}
   INCLUDES ${INC_ESMF})
 
 if (FV_PRECISION STREQUAL R4)
-  set (GFDL FMS::fms_r4)
+  set (GFDL fms_r4)
 elseif (FV_PRECISION STREQUAL R4R8) # FV is R4 but FMS is R8
-  get_target_property (extra_incs FMS::fms_r4 INCLUDE_DIRECTORIES)
+  get_target_property (extra_incs fms_r4 INCLUDE_DIRECTORIES)
    target_include_directories(${this} PRIVATE
    $<BUILD_INTERFACE:${extra_incs}>
    )
- set (GFDL FMS::fms_r8)
+ set (GFDL fms_r8)
 elseif (FV_PRECISION STREQUAL R8)
-  set (GFDL FMS::fms_r8)
+  set (GFDL fms_r8)
 endif ()
 
 
