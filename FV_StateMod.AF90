@@ -10,7 +10,7 @@ module FV_StateMod
    use ESMF                ! ESMF base class
    use MAPL                ! MAPL base class
 #endif
-
+   !$ser verbatim use mpi
    use MAPL_ConstantsMod, only: MAPL_CP, MAPL_RGAS, MAPL_RVAP, MAPL_GRAV, MAPL_RADIUS, &
       MAPL_KAPPA, MAPL_PI_R8, MAPL_ALHL, MAPL_PSDRY
 
@@ -45,6 +45,7 @@ module FV_StateMod
       fv_flags_interface_type, make_fv_flags_C_interop
 #endif
 
+   !$ser verbatim use,intrinsic :: ISO_Fortran_env
    implicit none
    private
 
@@ -217,7 +218,7 @@ module FV_StateMod
       integer                              :: NUM_CALLS
    end type T_FVDYCORE_STATE
 
-! Constants used by fvcore
+   ! Constants used by fvcore
    real(REAL8)                             :: pi
    real(REAL8)                             :: omega    ! angular velocity of earth's rotation
    real(FVPRC)                             :: cp       ! heat capacity of air at constant pressure
@@ -328,9 +329,9 @@ contains
       type (ESMF_GridComp)         , intent(INOUT) :: GC
       character(LEN=*)             , intent(IN   ) :: LAYOUT_FILE
       integer, optional            , intent(OUT  ) :: RC
-! Local
+      ! Local
       character(len=ESMF_MAXSTR)       :: IAm='FV_StateMod:FV_Setup'
-! Local variables
+      ! Local variables
 
       type (ESMF_Config)           :: cf
       type (ESMF_VM)               :: VM
@@ -346,7 +347,7 @@ contains
 
       real :: temp_real
 
-! BEGIN
+      ! BEGIN
 
       call ESMF_VMGetCurrent(VM, rc=STATUS)
       VERIFY_(STATUS)
@@ -354,8 +355,8 @@ contains
       call MAPL_MemUtilsWrite(VM, trim(IAm), RC=STATUS )
       VERIFY_(STATUS)
 
-! Retrieve the pointer to the state
-! ---------------------------------
+      ! Retrieve the pointer to the state
+      ! ---------------------------------
 
       call MAPL_GetObjectFromGC (GC, MAPL,  RC=STATUS )
       VERIFY_(STATUS)
@@ -367,7 +368,7 @@ contains
       call MAPL_TimerOff(MAPL,"--FMS_INIT")
       call MAPL_MemUtilsWrite(VM, 'FV_StateMod: FMS_INIT', RC=STATUS )
       VERIFY_(STATUS)
-! Start up FV
+      ! Start up FV
       call MAPL_TimerOn(MAPL,"--FV_INIT")
       call fv_init1(FV_Atm, DT, grids_on_this_pe, p_split)
       call MAPL_TimerOff(MAPL,"--FV_INIT")
@@ -377,7 +378,7 @@ contains
       if (FV_Atm(1)%flagstruct%npz == 1) SW_DYNAMICS = .true.
 
 
-! FV grid dimensions setup from MAPL
+      ! FV grid dimensions setup from MAPL
       call MAPL_GetResource( MAPL, FV_Atm(1)%flagstruct%npx, 'AGCM_IM:', default= 32, RC=STATUS )
       VERIFY_(STATUS)
       call MAPL_GetResource( MAPL, FV_Atm(1)%flagstruct%npy, 'AGCM_JM:', default=192, RC=STATUS )
@@ -391,7 +392,7 @@ contains
       call MAPL_GetResource( MAPL, temp_real, 'AGCM.STRETCH_FACTOR:', default=1.0, RC=STATUS )
       VERIFY_(STATUS)
       FV_Atm(1)%flagstruct%stretch_fac = temp_real
-! FV likes npx;npy in terms of cell vertices
+      ! FV likes npx;npy in terms of cell vertices
       if (FV_Atm(1)%flagstruct%npy == 6*FV_Atm(1)%flagstruct%npx) then
          FV_Atm(1)%flagstruct%ntiles = 6
          FV_Atm(1)%flagstruct%npy    = FV_Atm(1)%flagstruct%npx+1
@@ -401,10 +402,10 @@ contains
          FV_Atm(1)%flagstruct%npy    = FV_Atm(1)%flagstruct%npy+1
          FV_Atm(1)%flagstruct%npx    = FV_Atm(1)%flagstruct%npx+1
       endif
-! Check for Doubly Periodic Domain Info
+      ! Check for Doubly Periodic Domain Info
       call MAPL_GetResource( MAPL, FV_Atm(1)%flagstruct%deglat, label='FIXED_LATS:', default=FV_Atm(1)%flagstruct%deglat, rc=status )
       VERIFY_(STATUS)
-! MPI decomp setup
+      ! MPI decomp setup
       call MAPL_GetResource( MAPL, nx, 'NX:', default=0, RC=STATUS )
       VERIFY_(STATUS)
       FV_Atm(1)%layout(1) = nx
@@ -416,15 +417,15 @@ contains
          FV_Atm(1)%layout(2) = ny / 6
       end if
 
-! Get other scalars
-! -----------------
+      ! Get other scalars
+      ! -----------------
 
       call MAPL_GetResource( MAPL, ndt, 'RUN_DT:', default=0, RC=STATUS )
       VERIFY_(STATUS)
       DT = ndt
 
-! Advect tracers within DynCore(AdvCore_Advection=.false.)
-!             or within AdvCore(AdvCore_Advection=.true.)
+      ! Advect tracers within DynCore(AdvCore_Advection=.false.)
+      !             or within AdvCore(AdvCore_Advection=.true.)
       call MAPL_GetResource( MAPL, AdvCore_Advection, label='AdvCore_Advection:', default=AdvCore_Advection, rc=status )
       VERIFY_(STATUS)
 
@@ -470,8 +471,8 @@ contains
          FV_OFF = .TRUE.
       end if
 
-! Constants
-!
+      ! Constants
+      !
       pi     = MAPL_PI_R8
       omega  = MAPL_OMEGA    ! angular velocity of earth's rotation
       cp     = MAPL_CP       ! heat capacity of air at constant pressure
@@ -483,10 +484,10 @@ contains
       hlv    = MAPL_ALHL     ! latent heat of evaporation
       zvir   = MAPL_RVAP/MAPL_RGAS - 1.   ! RWV/RAIR-1
 
-!
-! Create some resolution dependent defaults for FV3 in GEOS...
-!    These can be overrided in fv_core_nml in fvcore_layout.rc linked to input.nml
-!-------------------------------------------------------------
+      !
+      ! Create some resolution dependent defaults for FV3 in GEOS...
+      !    These can be overrided in fv_core_nml in fvcore_layout.rc linked to input.nml
+      !-------------------------------------------------------------
       ! Number of water species for FV3 determined later
       ! when reading the tracer bundle in fv_first_run
       FV_Atm(1)%flagstruct%nwat = 0
@@ -715,19 +716,19 @@ contains
          endif
       endif
 
-!! Start up FV
+      !! Start up FV
       call MAPL_TimerOn(MAPL,"--FV_INIT")
       call fv_init2(FV_Atm, DT, grids_on_this_pe, p_split)
       call MAPL_TimerOff(MAPL,"--FV_INIT")
       call MAPL_MemUtilsWrite(VM, 'FV_StateMod: FV_INIT', RC=STATUS )
       VERIFY_(STATUS)
 
-!! Force compatibility of gmao_remap and n_zfilter
+      !! Force compatibility of gmao_remap and n_zfilter
       if (FV_Atm(1)%flagstruct%gmao_remap > 0) then
          FV_Atm(1)%flagstruct%n_zfilter = 0
       endif
 
-!! Setup GFDL microphysics module
+      !! Setup GFDL microphysics module
       if (FV_Atm(1)%flagstruct%do_sat_adj) then
          call gfdl_cloud_microphys_init()
       endif
@@ -755,6 +756,23 @@ contains
       VERIFY_(STATUS)
 #endif
 
+      !#######################################################################
+      !$ser verbatim integer :: mpi_rank,ier, timestep_len, timestep_status, save_timestep
+      !$ser verbatim character(len=256) :: ser_env, save_timestep_str
+      !#######################################################################
+      !$ser verbatim call get_environment_variable("SER_ENV", ser_env)
+      !$ser verbatim call get_environment_variable("SAVE_TIMESTEP", save_timestep_str, timestep_len, timestep_status)
+      !$ser verbatim if (timestep_status .eq. 0 .and. timestep_len .gt. 0) then
+      !$ser verbatim read (save_timestep_str,*) save_timestep
+      !$ser verbatim else
+      !$ser verbatim save_timestep = 1
+      !$ser verbatim endif
+      !$ser verbatim call mpi_comm_rank(MPI_COMM_WORLD, mpi_rank,ier)
+      !$ser init directory='./test_data/' prefix='Generator' mpi_rank=mpi_rank unique_id=.true.
+      !$ser mode write
+      !$ser off
+      !#######################################################################
+
       RETURN_(ESMF_SUCCESS)
 
    contains
@@ -773,9 +791,9 @@ contains
       type (ESMF_State)            , intent(INOUT) :: IMPORT
       integer, optional            , intent(OUT  ) :: RC
 
-! Local variables
+      ! Local variables
 
-! Pointers to geography info in the MAPL MetaComp
+      ! Pointers to geography info in the MAPL MetaComp
 
       real(REAL4),                 pointer :: LATS (:,:)
       real(REAL4),                 pointer :: LONS (:,:)
@@ -820,10 +838,10 @@ contains
       integer    :: tile_in
       integer    :: gid, masterproc
 
-! BEGIN
+      ! BEGIN
 
-! Retrieve the pointer to the state
-! ---------------------------------
+      ! Retrieve the pointer to the state
+      ! ---------------------------------
 
       call MAPL_GetObjectFromGC (GC, MAPL,  RC=STATUS )
       VERIFY_(STATUS)
@@ -856,7 +874,7 @@ contains
       call WRITE_PARALLEL(STATE%DT,format='("Dynamics time step : ",(F10.4))')
       call WRITE_PARALLEL(' ')
 
-! Get pointers to internal state vars
+      ! Get pointers to internal state vars
       call MAPL_GetPointer(internal, ak, "AK",rc=status)
       VERIFY_(STATUS)
       call MAPL_GetPointer(internal, bk, "BK",rc=status)
@@ -900,7 +918,7 @@ contains
       _ASSERT(FV_Atm(1)%ks <= FV_Atm(1)%flagstruct%NPZ+1,'ks must be smaller than NPZ+1')
       call WRITE_PARALLEL(FV_Atm(1)%ks, format='("Number of true pressure levels =", I5)'   )
 
-! Local Copy of dimensions
+      ! Local Copy of dimensions
 
       IS     = FV_Atm(1)%bd%isc
       IE     = FV_Atm(1)%bd%iec
@@ -948,8 +966,8 @@ contains
          endif
       endif
 
-! Check coordinate information from MAPL_MetaComp
-!--------------------------------------------
+      ! Check coordinate information from MAPL_MetaComp
+      !--------------------------------------------
       call MAPL_Get(MAPL,                &
          LATS          = LATS,           & ! These are in radians
          LONS          = LONS,           & ! These are in radians
@@ -972,7 +990,7 @@ contains
       call WRITE_PARALLEL(STATE%DT, &
          format='("INITIALIZED ALARM: DYN_TIME_TO_RUN EVERY ",F9.1," secs.")')
 
-!  Clear wall clock time clocks and global budgets
+      !  Clear wall clock time clocks and global budgets
 
       STATE%RUN_TIMES = 0
       STATE%NUM_CALLS = 0
@@ -1087,9 +1105,9 @@ contains
       if ( (gid==0)                              ) print*, ' '
 
       if (DEBUG) call debug_fv_state('DEBUG_RESTART',STATE)
-!
-! Write the vertical coordinate to STDOUT
-!
+      !
+      ! Write the vertical coordinate to STDOUT
+      !
       if( gid.eq.0 .and. .not. SW_DYNAMICS) then
          print *
          write(6,*) ' + denotes a layer within the "dz-filter" of the dynamics'
@@ -1156,7 +1174,7 @@ contains
       type (ESMF_GridComp)         , intent(INOUT) :: GC
       integer, optional            , intent(OUT  ) :: RC
 
-! Local variables
+      ! Local variables
       integer              :: status
       character(len=ESMF_MAXSTR)       :: IAm='FV:FV_Run'
 
@@ -1195,10 +1213,10 @@ contains
       real(REAL4), allocatable :: griddiffs(:,:)
       type (ESMF_Grid)         :: ESMFGRID
 
-! Splitting for Pure Advection
+      ! Splitting for Pure Advection
       real(FVPRC) :: myDT, lnp, rdg, pek, ak1
 
-! Convience variables
+      ! Convience variables
       integer :: nwat_tracers
       integer :: sphu = -1
       integer :: qliq = -1
@@ -1859,7 +1877,7 @@ contains
          fv_first_run = .false.
       endif
 
-! Check Dry Mass (Apply fixer is option is enabled)
+      ! Check Dry Mass (Apply fixer is option is enabled)
       if ( check_mass .OR. fix_mass ) then
          call MAPL_TimerOn(MAPL,"--MASS_FIX")
 
@@ -2034,6 +2052,7 @@ contains
             if (rank == 0) print *, '0: fv_dynamics: time taken = ', finish - start, 's'
          else
             call cpu_time(start)
+            !$ser on
             call pyfv3_interface_f_run( &
                comm, &
                FV_Atm(1)%npx, FV_Atm(1)%npy, FV_Atm(1)%npz, FV_Atm(1)%flagstruct%ntiles, &
@@ -2049,6 +2068,7 @@ contains
                FV_Atm(1)%ua, FV_Atm(1)%va, FV_Atm(1)%uc, FV_Atm(1)%vc, &
             ! input/output
                FV_Atm(1)%mfx, FV_Atm(1)%mfy, FV_Atm(1)%cx, FV_Atm(1)%cy, FV_Atm(1)%diss_est)
+            !$ser off
             call cpu_time(finish)
             print *, rank, ', pyfv3_interface_f_run: time taken = ', finish - start, 's'
          end if
@@ -2404,7 +2424,7 @@ contains
 
       endif
 
-! Copy FV to internal State
+      ! Copy FV to internal State
       call FV_To_State ( STATE )
 
       if (DEBUG) call debug_fv_state('After Dynamics Execution',STATE)
@@ -2417,19 +2437,19 @@ contains
       u_amb, v_amb, t_amb, dp_amb, q_amb, o3_amb, &
       u_inc, v_inc, t_inc, dp_inc, q_inc, o3_inc)
       use fv_treat_da_inc_mod, only : geos_get_da_increments
-! The ANA Lat-Lon Grid
+      ! The ANA Lat-Lon Grid
       integer, intent(in) :: IM,JM,KM
       real, intent(inout) :: LONS(IM), LATS(JM)
-! ANA-BKG fields on the ANA Lat-Lon Grid
+      ! ANA-BKG fields on the ANA Lat-Lon Grid
       real, dimension(IM,JM,KM), intent(inout) :: u_amb, v_amb, t_amb, dp_amb, q_amb, o3_amb
-! increments are returned on Cubed A-Grid with Native Cubed-Sphere Wind Incs on the D-Grid
+      ! increments are returned on Cubed A-Grid with Native Cubed-Sphere Wind Incs on the D-Grid
       real, dimension(FV_Atm(1)%bd%isc:FV_Atm(1)%bd%iec, &
          FV_Atm(1)%bd%jsc:FV_Atm(1)%bd%jec, &
          FV_Atm(1)%npz), intent(out) :: u_inc, v_inc, t_inc, dp_inc, q_inc, o3_inc
 
-!call geos_get_da_increments(FV_Atm, FV_Atm(1)%domain, LONS,LATS,IM,JM,KM, &
-!                     u_amb, v_amb, t_amb, dp_amb, q_amb, o3_amb,  &
-!                     u_inc, v_inc, t_inc, dp_inc, q_inc, o3_inc)
+      !call geos_get_da_increments(FV_Atm, FV_Atm(1)%domain, LONS,LATS,IM,JM,KM, &
+      !                     u_amb, v_amb, t_amb, dp_amb, q_amb, o3_amb,  &
+      !                     u_inc, v_inc, t_inc, dp_inc, q_inc, o3_inc)
 
    end subroutine FV_DA_Incs
 
@@ -2452,11 +2472,13 @@ contains
       if (run_pyfv3 /= 0) call pyfv3_interface_f_finalize()
 #endif
 
+      !$ser cleanup
+
    end subroutine FV_Finalize
 
    subroutine State_To_FV ( STATE )
 
-! !INPUT PARAMETERS:
+      ! !INPUT PARAMETERS:
 
       type(T_FVDYCORE_STATE),      pointer   :: STATE
 
@@ -2497,11 +2519,11 @@ contains
       akap  = kappa
       if (SW_DYNAMICS) akap  = 1.
 
-!------------
-! Update Winds
-!------------
+      !------------
+      ! Update Winds
+      !------------
 
-! D-Grid
+      ! D-Grid
       FV_Atm(1)%u(:,:,:) = tiny_number
       FV_Atm(1)%v(:,:,:) = tiny_number
       if (FV_Atm(1)%flagstruct%grid_type>=4) then
@@ -2551,9 +2573,9 @@ contains
 
       if (.not. FV_Atm(1)%flagstruct%hydrostatic) FV_Atm(1)%w(isc:iec,jsc:jec,:) = STATE%VARS%W
 
-!------------
-! Update Pressures
-!------------
+      !------------
+      ! Update Pressures
+      !------------
 
       FV_Atm(1)%pe(:,:,:) = tiny_number
       if (SW_DYNAMICS) then
@@ -2604,9 +2626,9 @@ contains
 
       if (.not. SW_DYNAMICS) then
 
-!-----------------------
-! Copy PT and make Dry T
-!-----------------------
+         !-----------------------
+         ! Copy PT and make Dry T
+         !-----------------------
          FV_Atm(1)%pt(:,:,:) = tiny_number
          FV_Atm(1)%pt(isc:iec,jsc:jec,:) = STATE%VARS%PT*STATE%VARS%PKZ
 
@@ -2615,14 +2637,14 @@ contains
                100., 335., bad_range=bad_range_T)
          endif
 
-!------------
-! Get delz
-!------------
+         !------------
+         ! Get delz
+         !------------
          if (.not. FV_Atm(1)%flagstruct%hydrostatic) FV_Atm(1)%delz(isc:iec,jsc:jec,:) = STATE%VARS%DZ
 
-!------------------------------------------------------------------------------
-! Get pkz
-!------------------------------------------------------------------------------
+         !------------------------------------------------------------------------------
+         ! Get pkz
+         !------------------------------------------------------------------------------
          FV_Atm(1)%pkz(isc:iec,jsc:jec,:) = STATE%VARS%PKZ
 
       endif
@@ -2634,8 +2656,8 @@ contains
 
    subroutine FV_To_State ( STATE )
 
-!
-! !INPUT PARAMETERS:
+      !
+      ! !INPUT PARAMETERS:
 
       type(T_FVDYCORE_STATE),      pointer   :: STATE
 
@@ -2659,7 +2681,7 @@ contains
       !                    -280., 280., bad_range)
       !endif
 
-! Copy updated FV data to internal state
+      ! Copy updated FV data to internal state
       STATE%VARS%U(:,:,:) = FV_Atm(1)%u(isc:iec,jsc:jec,:)
       STATE%VARS%V(:,:,:) = FV_Atm(1)%v(isc:iec,jsc:jec,:)
       if (.not. FV_Atm(1)%flagstruct%hydrostatic) STATE%VARS%W = FV_Atm(1)%w(isc:iec,jsc:jec,:)
@@ -2674,29 +2696,29 @@ contains
             enddo
          enddo
 
-!-----------------------------------
-! Fill Dry Temperature to PT
-!-----------------------------------
+         !-----------------------------------
+         ! Fill Dry Temperature to PT
+         !-----------------------------------
          !if ( FV_Atm(1)%flagstruct%range_warn ) then
          !   call range_check('T_F2S', FV_Atm(1)%pt, isc, iec, jsc, jec, ng, km, FV_Atm(1)%gridstruct%agrid,   &
          !                     100., 335., bad_range)
          !endif
          STATE%VARS%PT  = FV_Atm(1)%pt(isc:iec,jsc:jec,:)
 
-!------------------------------
-! Get delz from FV3
-!------------------------------
+         !------------------------------
+         ! Get delz from FV3
+         !------------------------------
          if (.not. FV_Atm(1)%flagstruct%hydrostatic) STATE%VARS%DZ = FV_Atm(1)%delz(isc:iec,jsc:jec,:)
 
-!--------------------------------
-! Get pkz from FV3
-!--------------------------------
-!!!!   STATE%VARS%PKZ = FV_Atm(1)%pkz(isc:iec,jsc:jec,:)
+         !--------------------------------
+         ! Get pkz from FV3
+         !--------------------------------
+         !!!!   STATE%VARS%PKZ = FV_Atm(1)%pkz(isc:iec,jsc:jec,:)
          call fv_getPKZ(STATE%VARS%PKZ,STATE%VARS%PE)
 
-!--------------------------------
-! Convert Dry Temperature to PT
-!--------------------------------
+         !--------------------------------
+         ! Convert Dry Temperature to PT
+         !--------------------------------
          STATE%VARS%PT  = STATE%VARS%PT/STATE%VARS%PKZ
       endif
 
@@ -2758,15 +2780,15 @@ contains
       pk   = exp( kappa*peln )
       delp = pe(:,:,2:npz+1)-pe(:,:,1:npz)
 
-!-------------------------------------------------------------------------
-! Re-compute the full (nonhydrostatic) pressure due to temperature changes
-!-------------------------------------------------------------------------
-!$omp parallel do default(shared)
+      !-------------------------------------------------------------------------
+      ! Re-compute the full (nonhydrostatic) pressure due to temperature changes
+      !-------------------------------------------------------------------------
+      !$omp parallel do default(shared)
       do k=1,npz
          do j=jsc,jec
             do i=isc,iec
-! perfect gas law: p = density * rdgas * virtual_temperature
-!              pkz(i,j,k) = ( rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k) )**kappa
+               ! perfect gas law: p = density * rdgas * virtual_temperature
+               !              pkz(i,j,k) = ( rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k) )**kappa
                pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*temp(i,j,k)*    &
                   (1.d0+zvir*qv(i,j,k))/delz(i,j,k)) )
             enddo
@@ -2779,7 +2801,7 @@ contains
    subroutine fv_getPKZ(pkz,pe)
       real(REAL8), intent(OUT) ::  pkz(FV_Atm(1)%bd%isc:FV_Atm(1)%bd%iec,FV_Atm(1)%bd%jsc:FV_Atm(1)%bd%jec,1:FV_Atm(1)%npz)
       real(REAL8), intent( IN) ::   pe(FV_Atm(1)%bd%isc:FV_Atm(1)%bd%iec,FV_Atm(1)%bd%jsc:FV_Atm(1)%bd%jec,1:FV_Atm(1)%npz+1)
-! Local
+      ! Local
       real(REAL8) ::   pk(FV_Atm(1)%bd%isc:FV_Atm(1)%bd%iec,FV_Atm(1)%bd%jsc:FV_Atm(1)%bd%jec,1:FV_Atm(1)%npz+1)
       real(REAL8) :: peln(FV_Atm(1)%bd%isc:FV_Atm(1)%bd%iec,FV_Atm(1)%bd%jsc:FV_Atm(1)%bd%jec,1:FV_Atm(1)%npz+1)
       real(REAL8) :: rdg
@@ -2795,7 +2817,7 @@ contains
       peln = log(pe)
       pk   = exp( kappa*peln )
 
-!$omp parallel do default(shared)
+      !$omp parallel do default(shared)
       do k=1,npz
          do j=jsc,jec
             do i=isc,iec
@@ -2810,15 +2832,15 @@ contains
 
    subroutine a2d3d(ua, va, ud, vd, wind_increment_limiter)
 
-! Move A-Grid winds/tendencies oriented on lat/lon to the D-grid cubed-sphere orientation
+      ! Move A-Grid winds/tendencies oriented on lat/lon to the D-grid cubed-sphere orientation
 
-! !INPUT/OUTPUT PARAMETERS:
+      ! !INPUT/OUTPUT PARAMETERS:
       real(REAL8)                :: ua(FV_Atm(1)%bd%isc:FV_Atm(1)%bd%iec  ,FV_Atm(1)%bd%jsc:FV_Atm(1)%bd%jec  ,FV_Atm(1)%npz) ! U-Wind
       real(REAL8)                :: va(FV_Atm(1)%bd%isc:FV_Atm(1)%bd%iec  ,FV_Atm(1)%bd%jsc:FV_Atm(1)%bd%jec  ,FV_Atm(1)%npz) ! V-Wind
       real(REAL8), intent(inout) :: ud(FV_Atm(1)%bd%isc:FV_Atm(1)%bd%iec  ,FV_Atm(1)%bd%jsc:FV_Atm(1)%bd%jec+1,FV_Atm(1)%npz) ! U-Wind
       real(REAL8), intent(inout) :: vd(FV_Atm(1)%bd%isc:FV_Atm(1)%bd%iec+1,FV_Atm(1)%bd%jsc:FV_Atm(1)%bd%jec  ,FV_Atm(1)%npz) ! V-Wind
       real(REAL8), optional      :: wind_increment_limiter
-! !Local Variables
+      ! !Local Variables
       integer :: is,ie, js,je, ng
       integer :: npx, npy, npz
       integer :: i,j,k, im2,jm2
@@ -2884,7 +2906,7 @@ contains
 
       if (FV_Atm(1)%flagstruct%grid_type<4) then
          do k=1, npz
-! Compute 3D wind tendency on A grid
+            ! Compute 3D wind tendency on A grid
             do j=js-1,je+1
                do i=is-1,ie+1
                   v3(i,j,1) = uatemp(i,j,k)*fv_atm(1)%gridstruct%vlon(i,j,1) + vatemp(i,j,k)*fv_atm(1)%gridstruct%vlat(i,j,1)
@@ -2893,8 +2915,8 @@ contains
                enddo
             enddo
 
-! A --> D
-! Interpolate to cell edges
+            ! A --> D
+            ! Interpolate to cell edges
             do j=js,je+1
                do i=is-1,ie+1
                   ue(i,j,1) = v3(i,j-1,1) + v3(i,j,1)
@@ -2911,7 +2933,7 @@ contains
                enddo
             enddo
 
-! --- E_W edges (for v-wind):
+            ! --- E_W edges (for v-wind):
             if ( is==1 ) then
                i = 1
                do j=js,je
@@ -2950,7 +2972,7 @@ contains
                   ve(i,j,3) = vt3(j)
                enddo
             endif
-! N-S edges (for u-wind):
+            ! N-S edges (for u-wind):
             if ( js==1 ) then
                j = 1
                do i=is,ie
@@ -2990,7 +3012,7 @@ contains
                enddo
             endif
 
-! Update:
+            ! Update:
             do j=js,je+1
                do i=is,ie
                   ud(i,j,k) = 0.5*( ue(i,j,1)*fv_atm(1)%gridstruct%es(1,i,j,1) +  &
@@ -3026,14 +3048,14 @@ contains
 
    subroutine a2d2d(ua, va, ud, vd)
 
-! Move A-Grid winds/tendencies oriented on lat/lon to the D-grid cubed-sphere orientation
+      ! Move A-Grid winds/tendencies oriented on lat/lon to the D-grid cubed-sphere orientation
 
-! !INPUT/OUTPUT PARAMETERS:
+      ! !INPUT/OUTPUT PARAMETERS:
       real(REAL8)                :: ua(FV_Atm(1)%bd%isc:FV_Atm(1)%bd%iec  ,FV_Atm(1)%bd%jsc:FV_Atm(1)%bd%jec  ) ! U-Wind
       real(REAL8)                :: va(FV_Atm(1)%bd%isc:FV_Atm(1)%bd%iec  ,FV_Atm(1)%bd%jsc:FV_Atm(1)%bd%jec  ) ! V-Wind
       real(REAL8), intent(inout) :: ud(FV_Atm(1)%bd%isc:FV_Atm(1)%bd%iec  ,FV_Atm(1)%bd%jsc:FV_Atm(1)%bd%jec+1) ! U-Wind
       real(REAL8), intent(inout) :: vd(FV_Atm(1)%bd%isc:FV_Atm(1)%bd%iec+1,FV_Atm(1)%bd%jsc:FV_Atm(1)%bd%jec  ) ! V-Wind
-! !Local Variables
+      ! !Local Variables
       integer :: is ,ie , js ,je
       integer :: npx, npy
       integer :: i,j, im2,jm2
@@ -3068,7 +3090,7 @@ contains
 
       if (FV_Atm(1)%flagstruct%grid_type<4) then
          ! Cubed-Sphere
-! Compute 3D wind tendency on A grid
+         ! Compute 3D wind tendency on A grid
          do j=js-1,je+1
             do i=is-1,ie+1
                v3(i,j,1) = uatemp(i,j)*fv_atm(1)%gridstruct%vlon(1,i,j) + vatemp(i,j)*fv_atm(1)%gridstruct%vlat(1,i,j)
@@ -3077,8 +3099,8 @@ contains
             enddo
          enddo
 
-! A --> D
-! Interpolate to cell edges
+         ! A --> D
+         ! Interpolate to cell edges
          do j=js,je+1
             do i=is-1,ie+1
                ue(i,j,1) = v3(i,j-1,1) + v3(i,j,1)
@@ -3095,7 +3117,7 @@ contains
             enddo
          enddo
 
-! --- E_W edges (for v-wind):
+         ! --- E_W edges (for v-wind):
          if ( is==1 ) then
             i = 1
             do j=js,je
@@ -3134,7 +3156,7 @@ contains
                ve(i,j,3) = vt3(j)
             enddo
          endif
-! N-S edges (for u-wind):
+         ! N-S edges (for u-wind):
          if ( js==1 ) then
             j = 1
             do i=is,ie
@@ -3174,7 +3196,7 @@ contains
             enddo
          endif
 
-! Update:
+         ! Update:
          do j=js,je+1
             do i=is,ie
                ud(i,j) = 0.5*( ue(i,j,1)*fv_atm(1)%gridstruct%es(1,i,j,1) +  &
@@ -3218,7 +3240,7 @@ contains
       real(FVPRC), intent(IN   ) :: dt
       integer i,j,k
 
-! Local ghosted arrays
+      ! Local ghosted arrays
       real(FVPRC) ::  uc(isd:ied+1,jsd:jed  ,1:FV_Atm(1)%flagstruct%npz)
       real(FVPRC) ::  vc(isd:ied  ,jsd:jed+1,1:FV_Atm(1)%flagstruct%npz)
       real(FVPRC) ::  ut(isd:ied+1,jsd:jed  )
@@ -3243,7 +3265,7 @@ contains
       real(FVPRC) :: cmax, frac
       integer     :: it, nsplt
 
-! Fill Ghosted arrays and update halos
+      ! Fill Ghosted arrays and update halos
       uc = MAPL_UNDEF
       vc = MAPL_UNDEF
       uc(is:ie,js:je,:) = ucI
@@ -3303,7 +3325,7 @@ contains
 !#define SIMPLE_FV_MASS_FLUXES
 #ifndef SIMPLE_FV_MASS_FLUXES
          if ( FV_Atm(1)%flagstruct%n_split==0 ) then
-! Determine nsplt for tracer advection
+            ! Determine nsplt for tracer advection
             cmax = 0.
             do j=js,je
                do i=is,ie
@@ -3332,34 +3354,34 @@ contains
                ra_y(i,j) = fv_atm(1)%gridstruct%area(i,j) + yfx(i,j) - yfx(i,j+1)
             enddo
          enddo
-! Zero out accumulated mass fluxes and courant numbers
+         ! Zero out accumulated mass fluxes and courant numbers
          cx(:,:,k) = 0.0
          mfx(:,:,k) = 0.0
          cy(:,:,k) = 0.0
          mfy(:,:,k) = 0.0
-! Compute mass fluxes using FV3 advection
+         ! Compute mass fluxes using FV3 advection
          do it=1,nsplt
             call mpp_update_domains( delp, FV_Atm(1)%domain, complete=.true. )
             call fv_tp_2d(delp, crx, cry, FV_Atm(1)%flagstruct%npx, FV_Atm(1)%flagstruct%npy, &
                FV_Atm(1)%flagstruct%hord_dp, fx, fy, xfx, yfx, &
                FV_Atm(1)%gridstruct,FV_Atm(1)%bd, ra_x, ra_y, FV_Atm(1)%flagstruct%lim_fac)
-! Update delp
+            ! Update delp
             do j=js,je
                do i=is,ie
                   delp(i,j) = delp(i,j) + (fx(i,j) - fx(i+1,j) +  &
                      fy(i,j) - fy(i,j+1)) * fv_atm(1)%gridstruct%rarea(i,j)
                enddo
             enddo
-! Accumulate Mass Fluxes and Courant Number outputs
+            ! Accumulate Mass Fluxes and Courant Number outputs
             cx(:,:,k) =  cx(:,:,k) + crx(is:ie,js:je)
             mfx(:,:,k) = mfx(:,:,k) +  fx(is:ie,js:je)
             cy(:,:,k) =  cy(:,:,k) + cry(is:ie,js:je)
             mfy(:,:,k) = mfy(:,:,k) +  fy(is:ie,js:je)
          enddo
 #else
-! Fill DELP ghost zones
+         ! Fill DELP ghost zones
          call mpp_update_domains(delp, FV_Atm(1)%domain, complete=.true.)
-! Compute Mass Fluxes and Fill Courant number outputs
+         ! Compute Mass Fluxes and Fill Courant number outputs
          do j=js,je
             do i=is,ie
                ! X-Dir
@@ -3376,7 +3398,7 @@ contains
                endif
             enddo
          enddo
-! Fill Mass Fluxes and Fill Courant number outputs
+         ! Fill Mass Fluxes and Fill Courant number outputs
          cx(:,:,k) = crx(is:ie,js:je)
          mfx(:,:,k) =  fx(is:ie,js:je)
          cy(:,:,k) = cry(is:ie,js:je)
@@ -3401,7 +3423,7 @@ contains
       real(FVPRC), intent(IN   ) :: dt
       integer i,j,k
 
-! Local ghosted arrays
+      ! Local ghosted arrays
       real(FVPRC) ::  uc(isd:ied+1,jsd:jed  ,1:FV_Atm(1)%flagstruct%npz)
       real(FVPRC) ::  vc(isd:ied  ,jsd:jed+1,1:FV_Atm(1)%flagstruct%npz)
       real(FVPRC) ::  ut(isd:ied+1,jsd:jed  )
