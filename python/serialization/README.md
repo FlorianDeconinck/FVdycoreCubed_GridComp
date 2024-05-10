@@ -1,0 +1,3 @@
+- Annotated files are XXX.SER
+- Running generate.sh turns them into proper Fortran
+- Files lives both in grid comp and @fvcore on a `fdeconinck/set_FVGridComp`

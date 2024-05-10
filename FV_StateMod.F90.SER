@@ -10,7 +10,6 @@ module FV_StateMod
    use ESMF                  ! ESMF base class
    use MAPL                  ! MAPL base class
 #endif
-   !$ser verbatim use mpi
    use MAPL_ConstantsMod, only: MAPL_CP, MAPL_RGAS, MAPL_RVAP, MAPL_GRAV, MAPL_RADIUS, &
       MAPL_KAPPA, MAPL_PI_R8, MAPL_ALHL, MAPL_PSDRY
 
@@ -45,7 +44,6 @@ module FV_StateMod
       fv_flags_interface_type, make_fv_flags_C_interop
 #endif
 
-   !$ser verbatim use,intrinsic :: ISO_Fortran_env
    implicit none
    private
 
@@ -269,6 +267,12 @@ module FV_StateMod
 #ifdef RUN_PYFV3
    integer :: run_pyfv3 = 0
 #endif
+
+   !#######################################################################
+   ! SERIALBOX-BLOCK
+   !$ser verbatim integer :: mpi_rank,ier, timestep_len, timestep_status, save_timestep
+   !$ser verbatim character(len=256) :: ser_env, save_timestep_str
+   !#######################################################################
 
 contains
 
@@ -757,9 +761,6 @@ contains
 #endif
 
       !#######################################################################
-      !$ser verbatim integer :: mpi_rank,ier, timestep_len, timestep_status, save_timestep
-      !$ser verbatim character(len=256) :: ser_env, save_timestep_str
-      !#######################################################################
       !$ser verbatim call get_environment_variable("SER_ENV", ser_env)
       !$ser verbatim call get_environment_variable("SAVE_TIMESTEP", save_timestep_str, timestep_len, timestep_status)
       !$ser verbatim if (timestep_status .eq. 0 .and. timestep_len .gt. 0) then
@@ -768,7 +769,7 @@ contains
       !$ser verbatim save_timestep = 1
       !$ser verbatim endif
       !$ser verbatim call mpi_comm_rank(MPI_COMM_WORLD, mpi_rank,ier)
-      !$ser init directory='./test_data/' prefix='Generator' mpi_rank=mpi_rank unique_id=.true.
+      !$ser init directory='./serialized_data/' prefix='Generator' mpi_rank=mpi_rank unique_id=.true.
       !$ser mode write
       !$ser off
       !#######################################################################
@@ -2029,6 +2030,48 @@ contains
             call cpu_time(start)
 #endif
 
+            !$ser on
+            !$ser savepoint FVDynamics-In
+            !$ser data bdt=myDT
+            !$ser data nq_tot=FV_Atm(1)%flagstruct%nwat+1
+            !$ser data zvir=zvir
+            !$ser data ptop=FV_Atm(n)%ptop
+            !$ser data ks=FV_Atm(1)%ptop
+            !$ser data ncnst=FV_Atm(1)%ncnst
+            !$ser data n_split=state%nsplit
+            !$ser data u=FV_Atm(1)%u
+            !$ser data v=FV_Atm(1)%v
+            !$ser data w=FV_Atm(1)%w
+            !$ser data delz=FV_Atm(1)%delz
+            !$ser data pt=FV_Atm(1)%pt
+            !$ser data delp=FV_Atm(1)%delp
+            !$ser data qvapor=FV_Atm(1)%q(:,:,:,sphu)
+            !$ser data qliquid=FV_Atm(1)%q(:,:,:,qliq)
+            !$ser data qice=FV_Atm(1)%q(:,:,:,qice)
+            !$ser data qrain=FV_Atm(1)%q(:,:,:,rain)
+            !$ser data qsnow=FV_Atm(1)%q(:,:,:,snow)
+            !$ser data qgraupel=FV_Atm(1)%q(:,:,:,grpl)
+            !$ser data qcld=FV_Atm(1)%q(:,:,:,qcld)
+            !$ser data ps=FV_Atm(1)%ps
+            !$ser data pe=FV_Atm(1)%pe
+            !$ser data pk=FV_Atm(1)%pk
+            !$ser data peln=FV_Atm(1)%peln
+            !$ser data pkz=FV_Atm(1)%pkz
+            !$ser data phis=FV_Atm(1)%phis
+            !$ser data q_con=FV_Atm(1)%q_con
+            !$ser data omga=FV_Atm(1)%omga
+            !$ser data ua=FV_Atm(1)%ua
+            !$ser data va=FV_Atm(1)%va
+            !$ser data uc=FV_Atm(1)%uc
+            !$ser data vc=FV_Atm(1)%vc
+            !$ser data ak=FV_Atm(1)%ak
+            !$ser data bk=FV_Atm(1)%bk
+            !$ser data mfxd=FV_Atm(1)%mfx
+            !$ser data mfyd=FV_Atm(1)%mfy
+            !$ser data cxd=FV_Atm(1)%cx
+            !$ser data cyd=FV_Atm(1)%cy
+            !$ser data diss_estd=FV_Atm(1)%diss_est
+            !$ser data consv_te=FV_Atm(1)%flagstruct%consv_te
             call fv_dynamics( &
                FV_Atm(1)%npx, FV_Atm(1)%npy, FV_Atm(1)%npz, FV_Atm(1)%ncnst, FV_Atm(1)%ng, myDT, &
                FV_Atm(1)%flagstruct%consv_te, FV_Atm(1)%flagstruct%fill, FV_Atm(1)%flagstruct%reproduce_sum, &
@@ -2047,12 +2090,43 @@ contains
                FV_Atm(1)%neststruct, FV_Atm(1)%idiag, FV_Atm(1)%bd, FV_Atm(1)%parent_grid, FV_Atm(1)%domain, &
                FV_Atm(1)%diss_est, u_dt, v_dt, w_dt, t_dt, &
                time_total)
+            !$ser savepoint FVDynamics-Out
+            !$ser data u=FV_Atm(1)%u
+            !$ser data v=FV_Atm(1)%v
+            !$ser data w=FV_Atm(1)%w
+            !$ser data delz=FV_Atm(1)%delz
+            !$ser data pt=FV_Atm(1)%pt
+            !$ser data delp=FV_Atm(1)%delp
+            !$ser data qvapor=FV_Atm(1)%q(:,:,:,sphu)
+            !$ser data qliquid=FV_Atm(1)%q(:,:,:,qliq)
+            !$ser data qice=FV_Atm(1)%q(:,:,:,qice)
+            !$ser data qrain=FV_Atm(1)%q(:,:,:,rain)
+            !$ser data qsnow=FV_Atm(1)%q(:,:,:,snow)
+            !$ser data qgraupel=FV_Atm(1)%q(:,:,:,grpl)
+            !$ser data qcld=FV_Atm(1)%q(:,:,:,qcld)
+            !$ser data ps=FV_Atm(1)%ps
+            !$ser data pe=FV_Atm(1)%pe
+            !$ser data pk=FV_Atm(1)%pk
+            !$ser data peln=FV_Atm(1)%peln
+            !$ser data pkz=FV_Atm(1)%pkz
+            !$ser data phis=FV_Atm(1)%phis
+            !$ser data q_con=FV_Atm(1)%q_con
+            !$ser data omga=FV_Atm(1)%omga
+            !$ser data ua=FV_Atm(1)%ua
+            !$ser data va=FV_Atm(1)%va
+            !$ser data uc=FV_Atm(1)%uc
+            !$ser data vc=FV_Atm(1)%vc
+            !$ser data mfxd=FV_Atm(1)%mfx
+            !$ser data mfyd=FV_Atm(1)%mfy
+            !$ser data cxd=FV_Atm(1)%cx
+            !$ser data cyd=FV_Atm(1)%cy
+            !$ser data diss_estd=FV_Atm(1)%diss_est
+            !$ser off
 #ifdef RUN_PYFV3
             call cpu_time(finish)
             if (rank == 0) print *, '0: fv_dynamics: time taken = ', finish - start, 's'
          else
             call cpu_time(start)
-            !$ser on
             call pyfv3_interface_f_run( &
                comm, &
                FV_Atm(1)%npx, FV_Atm(1)%npy, FV_Atm(1)%npz, FV_Atm(1)%flagstruct%ntiles, &
@@ -2068,7 +2142,6 @@ contains
                FV_Atm(1)%ua, FV_Atm(1)%va, FV_Atm(1)%uc, FV_Atm(1)%vc, &
             ! input/output
                FV_Atm(1)%mfx, FV_Atm(1)%mfy, FV_Atm(1)%cx, FV_Atm(1)%cy, FV_Atm(1)%diss_est)
-            !$ser off
             call cpu_time(finish)
             print *, rank, ', pyfv3_interface_f_run: time taken = ', finish - start, 's'
          end if

@@ -1,5 +1,7 @@
 esma_set_this ()
 
+option(BUILD_SERIALBOX_SER "Build with Serialbox serialization statements" OFF)
+
 option(BUILD_PYFV3_INTERFACE "Build pyFV3 interface" OFF)
 
 set (srcs
@@ -158,6 +160,19 @@ add_definitions (-DSPMD -DMAPL_MODE -DFVREGRID_MAPL_MODE)
 foreach(flag ${tmp})
    target_compile_options (${this} PRIVATE $<$<COMPILE_LANGUAGE:Fortran>:${flag}>)
 endforeach()
+
+if(BUILD_SERIALBOX_SER)
+  message(STATUS "Building with Serialbox serialization statements")
+  message(STATUS "${SERIALBOX_ROOT}/lib/")
+  add_definitions(-DSERIALIZE)
+  target_include_directories(${this} PRIVATE ${SERIALBOX_ROOT}/include)
+  find_library(SERIALBOX_LIB
+      NAMES SerialboxFortran
+      HINTS ${SERIALBOX_ROOT}/lib/
+      REQUIRED
+  )
+  target_link_libraries(${this} PRIVATE SERIALBOX_LIB)
+endif()
 
 ecbuild_add_executable (
   TARGET StandAlone_FV3_Dycore.x
