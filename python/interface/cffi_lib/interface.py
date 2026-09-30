@@ -1,0 +1,120 @@
+import cffi
+
+TMPFILEBASE = "pyFV3_interface_py"
+
+ffi = cffi.FFI()
+
+source = f"""
+from {TMPFILEBASE} import ffi
+from datetime import datetime
+from mpi4py import MPI
+from pyFV3_interface import pyfv3_init, pyfv3_run, pyfv3_finalize
+import traceback
+import sys
+
+try:
+    from mpi4py import MPI
+except ModuleNotFoundError as err:
+    MPI = None
+
+
+def _print_stack_and_return() -> int:
+    if MPI:
+        r = MPI.COMM_WORLD.Get_rank()
+    else:
+        r = ""
+    print(
+        f"\\n == == (Rank {{r}}) Error in Python: == == \\n"
+        f"{{traceback.format_exc()}}",
+        file=sys.stderr,
+        flush=True,
+    )
+    return -1
+
+@ffi.def_extern()
+def pyfv3_interface_py_init(
+    fv_flags,
+    comm_c,
+    npx, npy, npz, ntiles,
+    is_, ie, js, je, isd, ied, jsd, jed,
+    bdt, nq_tot, ak, bk, phis,
+    ) -> int:
+
+    # comm_c -> comm_py
+    comm_py = MPI.Intracomm() # new comm, internal MPI_Comm handle is MPI_COMM_NULL
+    comm_ptr = MPI._addressof(comm_py)  # internal MPI_Comm handle
+    try:
+        comm_ptr = ffi.cast('int*', comm_ptr)  # make it a CFFI pointer
+        comm_ptr[0] = comm_c  # assign comm_c to comm_py's MPI_Comm handle
+    except TypeError:
+        comm_ptr = ffi.cast('void**', comm_ptr)  # make it a CFFI pointer
+        comm_ptr[0] = comm_c  # assign comm_c to comm_py's MPI_Comm handle
+    try:
+        pyfv3_init(
+            fv_flags,
+            comm_py,
+            npx, npy, npz, ntiles,
+            is_, ie, js, je, isd, ied, jsd, jed,
+            bdt, nq_tot, ak, bk, phis,
+            )
+    except Exception as err:
+        return _print_stack_and_return()
+    return 0
+
+@ffi.def_extern()
+def pyfv3_interface_py_run(
+    comm_c,
+    npx, npy, npz, ntiles,
+    is_, ie, js, je, isd, ied, jsd, jed,
+    bdt, nq_tot, ng, ptop, ks, layout_1, layout_2, adiabatic,
+    u, v, w, delz,
+    pt, delp, q,
+    ps, pe, pk, peln, pkz,
+    phis, q_con, omga,
+    ua, va, uc, vc,
+    mfx, mfy, cx, cy, diss_est) -> int:
+
+    # comm_c -> comm_py
+    comm_py = MPI.Intracomm() # new comm, internal MPI_Comm handle is MPI_COMM_NULL
+    comm_ptr = MPI._addressof(comm_py)  # internal MPI_Comm handle
+    try:
+        comm_ptr = ffi.cast('int*', comm_ptr)  # make it a CFFI pointer
+        comm_ptr[0] = comm_c  # assign comm_c to comm_py's MPI_Comm handle
+    except TypeError:
+        comm_ptr = ffi.cast('void**', comm_ptr)  # make it a CFFI pointer
+        comm_ptr[0] = comm_c  # assign comm_c to comm_py's MPI_Comm handle
+    try:
+        pyfv3_run(
+            comm_py,
+            npx, npy, npz, ntiles,
+            is_, ie, js, je, isd, ied, jsd, jed,
+            bdt, nq_tot, ng, ptop, ks, layout_1, layout_2, adiabatic,
+            u, v, w, delz,
+            pt, delp, q,
+            ps, pe, pk, peln, pkz,
+            phis, q_con, omga,
+            ua, va, uc, vc,
+            mfx, mfy, cx, cy, diss_est)
+    except Exception as err:
+        return _print_stack_and_return()
+    return 0
+
+@ffi.def_extern()
+def pyfv3_interface_py_finalize() -> int:
+    try:
+        pyfv3_finalize()
+    except Exception as err:
+        return _print_stack_and_return()
+    return 0
+
+"""
+
+with open("fv_flags.h") as f:
+    data = "".join([line for line in f if not line.startswith("#")])
+    data = data.replace("CFFI_DLLEXPORT", "")
+    ffi.embedding_api(data)
+
+ffi.set_source(TMPFILEBASE, '#include "fv_flags.h"')
+
+ffi.embedding_init_code(source)
+ffi.compile(target="lib" + TMPFILEBASE + ".so", verbose=True)

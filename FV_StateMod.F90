@@ -38,10 +38,11 @@ module FV_StateMod
 
    use fv_diagnostics_mod, only: prt_maxmin, prt_minmax, range_check, &
                                  get_vorticity, updraft_helicity, calculate_shear_06, bunkers_vector, helicity_relative_CAPS
-#ifdef RUN_GTFV3
+#ifdef BUILD_GTFV3
    use ieee_exceptions, only: ieee_get_halting_mode, ieee_set_halting_mode, ieee_all
-   use geos_gtfv3_interface_mod, only: geos_gtfv3_interface_f
-   use geos_gtfv3_interface_mod, only: geos_gtfv3_interface_f_init, geos_gtfv3_interface_f_finalize
+   use pyfv3_interface_mod, only: pyfv3_interface_f_run
+   use pyfv3_interface_mod, only: pyfv3_interface_f_init, pyfv3_interface_f_finalize, &
+                                  fv_flags_interface_type, make_fv_flags_C_interop
 #endif
 
 implicit none
@@ -270,8 +271,8 @@ private
    real(REAL8), parameter ::  D180_0                  = 180.0
    real(REAL8), parameter ::  ratmax                  =  0.81
 
-#ifdef RUN_GTFV3
-   integer :: run_gtfv3 = 0
+#ifdef BUILD_PYFV3
+   logical :: USE_PYFV3 = .FALSE.
 #endif
 
 contains
@@ -785,6 +786,14 @@ contains
 !! Start up FV
     call MAPL_TimerOn(MAPL,"--FV_INIT")
     call fv_init2(FV_Atm, DT, grids_on_this_pe, p_split)
+    ! Under ARM chips the `idiag` structure doesn't alloc-default to 0
+    FV_Atm(1)%idiag%id_ws = 0
+    FV_Atm(1)%idiag%id_te = 0
+    FV_Atm(1)%idiag%id_amdt = 0
+    FV_Atm(1)%idiag%id_mdt = 0
+    FV_Atm(1)%idiag%id_divg = 0
+    FV_Atm(1)%idiag%id_aam = 0
+    FV_Atm(1)%idiag%id_amdt = 0
     call MAPL_TimerOff(MAPL,"--FV_INIT")
     call MAPL_MemUtilsWrite(VM, 'FV_StateMod: FV_INIT', RC=STATUS )
     VERIFY_(STATUS)
@@ -812,9 +821,8 @@ contains
   call MAPL_MemUtilsWrite(VM, trim(Iam), RC=STATUS )
   VERIFY_(STATUS)
 
-#ifdef RUN_GTFV3
-  call MAPL_GetResource(MAPL, run_gtfv3, 'RUN_GTFV3:', default=0, RC=STATUS)
-  VERIFY_(STATUS)
+#ifdef BUILD_PYFV3
+  call MAPL_GetResource(MAPL, USE_PYFV3, 'USE_PYFV3:', default=.FALSE., RC=STATUS); VERIFY_(STATUS)
 #endif
 
   RETURN_(ESMF_SUCCESS)
@@ -883,11 +891,6 @@ contains
   logical    :: hybrid
   integer    :: tile_in
   integer    :: gid, masterproc
-
-#ifdef RUN_GTFV3
-  logical :: halting_mode(5)
-  integer :: comm
-#endif
 
 ! BEGIN
 
@@ -1197,22 +1200,6 @@ contains
   call MAPL_MemUtilsWrite(VM, 'FV_StateMod: FV Initialize', RC=STATUS )
   VERIFY_(STATUS)
 
-#ifdef RUN_GTFV3
-  if (run_gtfv3 /= 0) then
-     ! call ESMF_VMGetCurrent(VM, _RC)
-     call ESMF_VMGet(VM, mpiCommunicator=comm, _RC)
-     ! A workaround to the issue of SIGFPE abort during importing of numpy, is to
-     ! disable trapping of FPEs temporarily, call the Python interface and resume trapping
-     call ieee_get_halting_mode(ieee_all, halting_mode)
-     call ieee_set_halting_mode(ieee_all, .false.)
-     call geos_gtfv3_interface_f_init( &
-          comm, &
-          FV_Atm(1)%npx, FV_Atm(1)%npy, FV_Atm(1)%npz, FV_Atm(1)%flagstruct%ntiles, &
-          IS, IE, JS, JE, ISD, IED, JSD, JED, real(STATE%DT), 7)
-     call ieee_set_halting_mode(ieee_all, halting_mode)
-  end if
-#endif
-
   RETURN_(ESMF_SUCCESS)
 
 end subroutine FV_InitState
@@ -1307,15 +1294,17 @@ subroutine FV_Run (STATE, EXPORT, CLOCK, GC, PLE0, RC)
 
   logical :: NWAT_TEST
 
-#ifdef RUN_GTFV3
+#ifdef BUILD_PYFV3
   type(ESMF_VM) :: vm
   integer :: comm, rank, mpierr
   real :: start, finish
+  logical :: halting_mode(5)
+  type(fv_flags_interface_type) :: c_fv_flags
 #endif
 
 ! Begin
 
-#ifdef RUN_GTFV3
+#ifdef BUILD_PYFV3
   call ESMF_VMGetCurrent(vm, rc=status) ! pchakrab: replace with ESMF_GridCompGet(gc, VM=VM, _RC)
   call ESMF_VMGet(vm, mpiCommunicator=comm)
   call MPI_Comm_rank(comm, rank, mpierr)
@@ -1347,6 +1336,7 @@ subroutine FV_Run (STATE, EXPORT, CLOCK, GC, PLE0, RC)
   ng  = FV_Atm(1)%ng
   domain = FV_Atm(1)%domain
 
+  call MAPL_TimerOn(MAPL,"--FV_FIRST_RUN")
   ! Be sure we have the correct PHIS and number of tracers for this run
    if (fv_first_run) then
     ! Determine how many water species we have
@@ -1445,10 +1435,32 @@ subroutine FV_Run (STATE, EXPORT, CLOCK, GC, PLE0, RC)
         FV_Atm(1)%ncnst = STATE%GRID%NQ
      endif
      deallocate( FV_Atm(1)%q )
-     allocate  ( FV_Atm(1)%q(isd:ied  ,jsd:jed  ,npz, FV_Atm(1)%ncnst) )
-    ! Echo FV3 setup
+     allocate  ( FV_Atm(1)%q(isd:ied  ,jsd:jed  ,npz, FV_Atm(1)%ncnst) )  
+     ! Echo FV3 setup
      call echo_fv3_setup()
+     ! Setup pyFV3 here since we need to know the exact nwat
+     ! We can do this because this is trigger _only once_.
+#ifdef BUILD_PYFV3
+     if (USE_PYFV3) then
+      ! A workaround to the issue of SIGFPE abort during importing of numpy, is to
+      ! disable trapping of FPEs temporarily, call the Python interface and resume trapping
+      call ieee_get_halting_mode(ieee_all, halting_mode)
+      call ieee_set_halting_mode(ieee_all, .false.)
+      call make_fv_flags_C_interop(FV_Atm(1)%flagstruct, FV_Atm(1)%layout, c_fv_flags)
+      call pyfv3_interface_f_init( &
+            c_fv_flags, &
+            comm, &
+            FV_Atm(1)%npx, FV_Atm(1)%npy, FV_Atm(1)%npz, FV_Atm(1)%flagstruct%ntiles, &
+            FV_Atm(1)%bd%isc, FV_Atm(1)%bd%iec, FV_Atm(1)%bd%jsc, FV_Atm(1)%bd%jec, &
+            FV_Atm(1)%bd%isd, FV_Atm(1)%bd%ied, FV_Atm(1)%bd%jsd, FV_Atm(1)%bd%jed, &
+            real(STATE%DT), FV_Atm(1)%ncnst, &
+            FV_Atm(1)%ak, FV_Atm(1)%bk, FV_Atm(1)%phis)
+      call ieee_set_halting_mode(ieee_all, halting_mode)
+      end if
+#endif
+
    endif
+   call MAPL_TimerOff(MAPL,"--FV_FIRST_RUN")
 
    select case ( FV_Atm(1)%flagstruct%nwat )
   ! Assign Tracer Indices for FV3
@@ -1841,6 +1853,7 @@ subroutine FV_Run (STATE, EXPORT, CLOCK, GC, PLE0, RC)
      ! Mark FV setup complete
       fv_first_run = .false.
     endif
+    call MAPL_TimerOff(MAPL,"--STATE_TO_FV")
 
 ! Check Dry Mass (Apply fixer is option is enabled)
     if ( check_mass .OR. fix_mass ) then
@@ -1981,8 +1994,8 @@ subroutine FV_Run (STATE, EXPORT, CLOCK, GC, PLE0, RC)
     t_dt(:,:,:) = 0.0
     w_dt(:,:,:) = 0.0
 
-#ifdef RUN_GTFV3
-    if (run_gtfv3 == 0) then
+#ifdef BUILD_PYFV3
+    if (.not. USE_PYFV3) then
        call cpu_time(start)
 #endif
        call fv_dynamics( &
@@ -2003,12 +2016,12 @@ subroutine FV_Run (STATE, EXPORT, CLOCK, GC, PLE0, RC)
             FV_Atm(1)%neststruct, FV_Atm(1)%idiag, FV_Atm(1)%bd, FV_Atm(1)%parent_grid, FV_Atm(1)%domain, &
             FV_Atm(1)%diss_est, u_dt, v_dt, w_dt, t_dt, &
             time_total)
-#ifdef RUN_GTFV3
+#ifdef BUILD_PYFV3
        call cpu_time(finish)
        if (rank == 0) print *, '0: fv_dynamics: time taken = ', finish - start, 's'
     else
-       call cpu_time(start)
-       call geos_gtfv3_interface_f( &
+      call cpu_time(start)
+      call pyfv3_interface_f_run( &
             comm, &
             FV_Atm(1)%npx, FV_Atm(1)%npy, FV_Atm(1)%npz, FV_Atm(1)%flagstruct%ntiles, &
             FV_Atm(1)%bd%is, FV_Atm(1)%bd%ie, FV_Atm(1)%bd%js, FV_Atm(1)%bd%je, &
@@ -2017,19 +2030,18 @@ subroutine FV_Run (STATE, EXPORT, CLOCK, GC, PLE0, RC)
             FV_Atm(1)%layout(1), FV_Atm(1)%layout(2), adiabatic, &
             ! input/output
             FV_Atm(1)%u, FV_Atm(1)%v, FV_Atm(1)%w, FV_Atm(1)%delz, &
-            FV_Atm(1)%pt, FV_Atm(1)%delp, FV_Atm(1)%q(:,:,:,1:7), &
+            FV_Atm(1)%pt, FV_Atm(1)%delp, FV_Atm(1)%q(:,:,:,:), &
             FV_Atm(1)%ps, FV_Atm(1)%pe, FV_Atm(1)%pk, FV_Atm(1)%peln, FV_Atm(1)%pkz, &
             FV_Atm(1)%phis, FV_Atm(1)%q_con, FV_Atm(1)%omga, &
             FV_Atm(1)%ua, FV_Atm(1)%va, FV_Atm(1)%uc, FV_Atm(1)%vc, &
-            ! input
-            FV_Atm(1)%ak, FV_Atm(1)%bk, &
             ! input/output
             FV_Atm(1)%mfx, FV_Atm(1)%mfy, FV_Atm(1)%cx, FV_Atm(1)%cy, FV_Atm(1)%diss_est)
        call cpu_time(finish)
-       print *, rank, ', geos_gtfv3_interface_f: time taken = ', finish - start, 's'
+       if (rank == 0) print *, rank, ', pyfv3_interface_f_run: time taken = ', finish - start, 's'
     end if
 #endif
 
+    call MAPL_TimerOn(MAPL,"----WIND_EXPORTS")
     allocate ( udt(isc:iec,jsc:jec,npz) )
     allocate ( vdt(isc:iec,jsc:jec,npz) )
     ! go from native D-Grid tendencies to A-grid rotated exports
@@ -2072,10 +2084,12 @@ subroutine FV_Run (STATE, EXPORT, CLOCK, GC, PLE0, RC)
     deallocate ( w_dt )
 
     call nullify_domain()
+    call MAPL_TimerOff(MAPL,"----WIND_EXPORTS")
 
     endif
     call MAPL_TimerOff(MAPL,"--FV_DYNAMICS")
 
+  call MAPL_TimerOn(MAPL,"--PUSH_TRACERS")
   SPHU_FILLED = .FALSE.
   QLIQ_FILLED = .FALSE.
   QICE_FILLED = .FALSE.
@@ -2393,11 +2407,33 @@ subroutine FV_Run (STATE, EXPORT, CLOCK, GC, PLE0, RC)
   endif
   call MAPL_TimerOff(MAPL,"--PUSH_TRACERS")
 
+ ! Clean negative tracers and check
+  if (DEBUG_ADV) then
+    prt_minmax     = DEBUG_ADV
+    if (mpp_pe()==0) print*,''
+    if (mpp_pe()==0) print*,'-------------- FV3 Tracer Debug After DYN --------------'
+    allocate( DEBUG_ARRAY(isc:iec,jsc:jec,npz) )
+    do n=1,STATE%GRID%NQ
+       if (state%vars%tracer(n)%is_r4) then
+          DEBUG_ARRAY(:,:,1:npz) = state%vars%tracer(n)%content_r4
+       else
+          DEBUG_ARRAY(:,:,1:npz) = state%vars%tracer(n)%content
+       endif
+       call prt_maxmin(TRIM(state%vars%tracer(n)%tname), DEBUG_ARRAY, isc, iec, jsc, jec, 0, npz, fac1)
+    enddo
+    deallocate ( DEBUG_ARRAY )
+    if (mpp_pe()==0) print*,'-------------- FV3 Tracer Debug After DYN --------------'
+    if (mpp_pe()==0) print*,''
+    prt_minmax     = .false.
+  endif
+  call MAPL_TimerOff(MAPL,"--PUSH_TRACERS")
+
 ! Copy FV to internal State
    call FV_To_State ( MAPL, STATE )
 
     if (DEBUG) call debug_fv_state('After Dynamics Execution',STATE)
 
+  call MAPL_TimerOff(MAPL,"--FV_TO_STATE")
     RETURN_(ESMF_SUCCESS)
 
 end subroutine FV_Run
@@ -2437,8 +2473,8 @@ end subroutine FV_Run
    !    call ESMF_GridDestroy  (STATE%GRID%GRID)
 #endif
 
-#ifdef RUN_GTFV3
-   if (run_gtfv3 /= 0) call geos_gtfv3_interface_f_finalize()
+#ifdef BUILD_PYFV3
+   if (USE_PYFV3) call pyfv3_interface_f_finalize()
 #endif
 
  end subroutine FV_Finalize

@@ -1,14 +1,29 @@
+from __future__ import annotations
 import cffi
 import numpy as np
 from math import prod
 from cuda_profiler import CUDAProfiler
-from pace.dsl.typing import Float
+from ndsl.dsl.typing import Float
 from typing import Tuple, Optional, List, Dict, Union
 from types import ModuleType
-from pace.util._optional_imports import cupy as cp
+from ndsl.optional_imports import cupy as cp
 
 DeviceArray = cp.ndarray if cp else None
 PythonArray = Union[np.ndarray, (cp.ndarray if cp else None)]
+
+
+class NullStream:
+    def __init__(self):
+        pass
+
+    def synchronize(self):
+        pass
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        pass
 
 
 class FortranPythonConversion:
@@ -29,7 +44,7 @@ class FortranPythonConversion:
         ied: int,
         jsd: int,
         jed: int,
-        num_tracers: int,
+        tracer_count: int,
         numpy_module: ModuleType,
     ):
         # Python numpy-like module is given by the caller leaving
@@ -43,14 +58,16 @@ class FortranPythonConversion:
         if self._python_targets_gpu:
             self._stream_A = cp.cuda.Stream(non_blocking=True)
             self._stream_B = cp.cuda.Stream(non_blocking=True)
-            self._current_stream = self._stream_A
+        else:
+            self._stream_A = NullStream()
+            self._stream_B = NullStream()
+        self._current_stream = self._stream_A
 
         # Layout & indexing
         self._npx, self._npy, self._npz = npx, npy, npz
         self._is, self._ie, self._js, self._je = is_, ie, js, je
         self._isd, self._ied, self._jsd, self._jed = isd, ied, jsd, jed
-        assert num_tracers == 7, f"Expected 7 tracers, received: {num_tracers}"
-        self._num_tracers = num_tracers
+        self._num_tracers = tracer_count
 
         # cffi init
         self._ffi = cffi.FFI()
@@ -67,9 +84,9 @@ class FortranPythonConversion:
 
     def _fortran_to_numpy(
         self,
-        fptr: "cffi.FFI.CData",
+        fptr: cffi.FFI.CData,
         dim: List[int],
-    ):
+    ) -> np.ndarray:
         """
         Input: Fortran data pointed to by fptr and of shape dim = (i, j, k)
         Output: C-ordered double precision NumPy data of shape (i, j, k)
@@ -138,30 +155,30 @@ class FortranPythonConversion:
     def fortran_to_python(
         self,
         # input
-        u_ptr: "cffi.FFI.CData",
-        v_ptr: "cffi.FFI.CData",
-        w_ptr: "cffi.FFI.CData",
-        delz_ptr: "cffi.FFI.CData",
-        pt_ptr: "cffi.FFI.CData",
-        delp_ptr: "cffi.FFI.CData",
-        q_ptr: "cffi.FFI.CData",
-        ps_ptr: "cffi.FFI.CData",
-        pe_ptr: "cffi.FFI.CData",
-        pk_ptr: "cffi.FFI.CData",
-        peln_ptr: "cffi.FFI.CData",
-        pkz_ptr: "cffi.FFI.CData",
-        phis_ptr: "cffi.FFI.CData",
-        q_con_ptr: "cffi.FFI.CData",
-        omga_ptr: "cffi.FFI.CData",
-        ua_ptr: "cffi.FFI.CData",
-        va_ptr: "cffi.FFI.CData",
-        uc_ptr: "cffi.FFI.CData",
-        vc_ptr: "cffi.FFI.CData",
-        mfxd_ptr: "cffi.FFI.CData",
-        mfyd_ptr: "cffi.FFI.CData",
-        cxd_ptr: "cffi.FFI.CData",
-        cyd_ptr: "cffi.FFI.CData",
-        diss_estd_ptr: "cffi.FFI.CData",
+        u_ptr: cffi.FFI.CData,
+        v_ptr: cffi.FFI.CData,
+        w_ptr: cffi.FFI.CData,
+        delz_ptr: cffi.FFI.CData,
+        pt_ptr: cffi.FFI.CData,
+        delp_ptr: cffi.FFI.CData,
+        q_ptr: cffi.FFI.CData,
+        ps_ptr: cffi.FFI.CData,
+        pe_ptr: cffi.FFI.CData,
+        pk_ptr: cffi.FFI.CData,
+        peln_ptr: cffi.FFI.CData,
+        pkz_ptr: cffi.FFI.CData,
+        phis_ptr: cffi.FFI.CData,
+        q_con_ptr: cffi.FFI.CData,
+        omga_ptr: cffi.FFI.CData,
+        ua_ptr: cffi.FFI.CData,
+        va_ptr: cffi.FFI.CData,
+        uc_ptr: cffi.FFI.CData,
+        vc_ptr: cffi.FFI.CData,
+        mfxd_ptr: cffi.FFI.CData,
+        mfyd_ptr: cffi.FFI.CData,
+        cxd_ptr: cffi.FFI.CData,
+        cyd_ptr: cffi.FFI.CData,
+        diss_estd_ptr: cffi.FFI.CData,
     ):
         """
         Convert Fortran arrays pointed to by *_ptr to NumPy arrays
@@ -171,12 +188,12 @@ class FortranPythonConversion:
         # Shorthands
         is_, ie, js, je = self._is, self._ie, self._js, self._je
         isd, ied, jsd, jed = self._isd, self._ied, self._jsd, self._jed
-        npz, num_tracers = self._npz, self._num_tracers
+        npz, tracer_count = self._npz, self._num_tracers
 
         # q/pe/peln require special handling
         # pe/peln need to be have their axes swapped - (i, k, j) -> (i, j, k)
         q = self._fortran_to_python_trf(
-            q_ptr, (ied - isd + 1, jed - jsd + 1, npz, num_tracers)
+            q_ptr, (ied - isd + 1, jed - jsd + 1, npz, tracer_count)
         )
         pe = self._fortran_to_python_trf(
             pe_ptr,
@@ -237,7 +254,7 @@ class FortranPythonConversion:
                 uc_ptr, (ied + 1 - isd + 1, jed - jsd + 1, npz)
             ),
             "vc": self._fortran_to_python_trf(
-                va_ptr, (ied - isd + 1, jed + 1 - jsd + 1, npz)
+                vc_ptr, (ied - isd + 1, jed + 1 - jsd + 1, npz)
             ),
             "mfxd": self._fortran_to_python_trf(
                 mfxd_ptr, (ie + 1 - is_ + 1, je - js + 1, npz)
@@ -287,26 +304,26 @@ class FortranPythonConversion:
         self,
         array: PythonArray,
         dtype: type,
-        swap_axes: Optional[Tuple[int, int]] = None,
+        swap_axes: Tuple[int, int] | None = None,
     ) -> np.ndarray:
         """Copy back a numpy array in python layout to Fortran"""
 
         if self._python_targets_gpu:
             numpy_array = self._transform_and_download(array, dtype, swap_axes)
         else:
-            numpy_array = array.astype(dtype).flatten(order="F")
-            if swap_axes:
-                numpy_array = np.swapaxes(
-                    numpy_array,
+            if swap_axes is not None:
+                array = np.swapaxes(
+                    array,
                     swap_axes[0],
                     swap_axes[1],
                 )
+            numpy_array = array.astype(dtype).flatten(order="F")
         return numpy_array
 
     def _python_to_fortran_trf(
         self,
         array: PythonArray,
-        fptr: "cffi.FFI.CData",
+        fptr: cffi.FFI.CData,
         ptr_offset: int = 0,
         swap_axes: Optional[Tuple[int, int]] = None,
     ) -> np.ndarray:
@@ -329,30 +346,30 @@ class FortranPythonConversion:
         # input
         python_state: Dict[str, PythonArray],
         # output
-        u_ptr: "cffi.FFI.CData",
-        v_ptr: "cffi.FFI.CData",
-        w_ptr: "cffi.FFI.CData",
-        delz_ptr: "cffi.FFI.CData",
-        pt_ptr: "cffi.FFI.CData",
-        delp_ptr: "cffi.FFI.CData",
-        q_ptr: "cffi.FFI.CData",
-        ps_ptr: "cffi.FFI.CData",
-        pe_ptr: "cffi.FFI.CData",
-        pk_ptr: "cffi.FFI.CData",
-        peln_ptr: "cffi.FFI.CData",
-        pkz_ptr: "cffi.FFI.CData",
-        phis_ptr: "cffi.FFI.CData",
-        q_con_ptr: "cffi.FFI.CData",
-        omga_ptr: "cffi.FFI.CData",
-        ua_ptr: "cffi.FFI.CData",
-        va_ptr: "cffi.FFI.CData",
-        uc_ptr: "cffi.FFI.CData",
-        vc_ptr: "cffi.FFI.CData",
-        mfxd_ptr: "cffi.FFI.CData",
-        mfyd_ptr: "cffi.FFI.CData",
-        cxd_ptr: "cffi.FFI.CData",
-        cyd_ptr: "cffi.FFI.CData",
-        diss_estd_ptr: "cffi.FFI.CData",
+        u_ptr: cffi.FFI.CData,
+        v_ptr: cffi.FFI.CData,
+        w_ptr: cffi.FFI.CData,
+        delz_ptr: cffi.FFI.CData,
+        pt_ptr: cffi.FFI.CData,
+        delp_ptr: cffi.FFI.CData,
+        q_ptr: cffi.FFI.CData,
+        ps_ptr: cffi.FFI.CData,
+        pe_ptr: cffi.FFI.CData,
+        pk_ptr: cffi.FFI.CData,
+        peln_ptr: cffi.FFI.CData,
+        pkz_ptr: cffi.FFI.CData,
+        phis_ptr: cffi.FFI.CData,
+        q_con_ptr: cffi.FFI.CData,
+        omga_ptr: cffi.FFI.CData,
+        ua_ptr: cffi.FFI.CData,
+        va_ptr: cffi.FFI.CData,
+        uc_ptr: cffi.FFI.CData,
+        vc_ptr: cffi.FFI.CData,
+        mfxd_ptr: cffi.FFI.CData,
+        mfyd_ptr: cffi.FFI.CData,
+        cxd_ptr: cffi.FFI.CData,
+        cyd_ptr: cffi.FFI.CData,
+        diss_estd_ptr: cffi.FFI.CData,
     ) -> None:
         """
         dp->sp, transpose, swap axes, numpy -> fortran
@@ -365,62 +382,13 @@ class FortranPythonConversion:
             self._python_to_fortran_trf(python_state["w"], w_ptr)
             self._python_to_fortran_trf(python_state["delz"], delz_ptr)
 
-        with CUDAProfiler("pt/delp/q"):
-            # pt/delp/q
+        with CUDAProfiler("pt/delp"):
+            # pt/delp
             self._python_to_fortran_trf(python_state["pt"], pt_ptr)
             self._python_to_fortran_trf(python_state["delp"], delp_ptr)
 
         with CUDAProfiler("q"):
-            # Dev Note: you should be able to unroll the below code in ptr + offset
-            # since we are using Fortran layout (column-first)
-            # q needs special handling
-            # self.q = np.empty(list(python_state["qvapor"].shape) + [self._num_tracers])
-            # self.q[:, :, :, 0] = python_state["qvapor"]
-            # self.q[:, :, :, 1] = python_state["qliquid"]
-            # self.q[:, :, :, 2] = python_state["qice"]
-            # self.q[:, :, :, 3] = python_state["qrain"]
-            # self.q[:, :, :, 4] = python_state["qsnow"]
-            # self.q[:, :, :, 5] = python_state["qgraupel"]
-            # self.q[:, :, :, 6] = python_state["qcld"]
-            # self._python_to_fortran_trf(self.q, q_ptr)
-
-            self._python_to_fortran_trf(python_state["qvapor"], q_ptr)
-            offset = python_state["qvapor"].size
-            self._python_to_fortran_trf(
-                python_state["qliquid"],
-                q_ptr,
-                ptr_offset=offset,
-            )
-            offset += python_state["qliquid"].size
-            self._python_to_fortran_trf(
-                python_state["qice"],
-                q_ptr,
-                ptr_offset=offset,
-            )
-            offset += python_state["qice"].size
-            self._python_to_fortran_trf(
-                python_state["qrain"],
-                q_ptr,
-                ptr_offset=offset,
-            )
-            offset += python_state["qrain"].size
-            self._python_to_fortran_trf(
-                python_state["qsnow"],
-                q_ptr,
-                ptr_offset=offset,
-            )
-            offset += python_state["qsnow"].size
-            self._python_to_fortran_trf(
-                python_state["qgraupel"],
-                q_ptr,
-                ptr_offset=offset,
-            )
-            offset += python_state["qgraupel"].size
-            self._python_to_fortran_trf(
-                python_state["qcld"],
-                q_ptr,
-                ptr_offset=offset,
-            )
+            self._python_to_fortran_trf(python_state["tracers"], q_ptr)
 
         with CUDAProfiler("ps/pe/pk/peln/pkz"):
             # ps/pe/pk/peln/pkz

@@ -1,0 +1,364 @@
+from __future__ import annotations
+import os
+from f_py_conversion import FortranPythonConversion, PythonArray
+from cuda_profiler import CUDAProfiler, TimedCUDAProfiler
+from mpi4py import MPI
+from ndsl.optional_imports import cupy as cp
+import numpy as np
+from typing import Dict
+from pyFV3_wrapper import GeosDycoreWrapper, MemorySpace
+from fv_flags import FVFlags
+import cffi
+from ndsl import Backend
+
+
+class PYFV3_WRAPPER:
+    def __init__(
+        self,
+        fv_flags: FVFlags,
+        bdt: float,
+        comm: MPI.Intercomm,
+        npx: int,
+        npy: int,
+        npz: int,
+        is_: int,
+        ie: int,
+        js: int,
+        je: int,
+        isd: int,
+        ied: int,
+        jsd: int,
+        jed: int,
+        tracer_count: int,
+        ak_cdata: cffi.FFI.CData,
+        bk_cdata: cffi.FFI.CData,
+        phis_cdata: cffi.FFI.CData,
+        backend: str = "st:dace:cpu:KJI",
+    ) -> None:
+        self.rank = comm.Get_rank()
+        self.backend = Backend(backend)
+        # For Fortran<->NumPy conversion
+        if self.backend.is_gpu_backend():
+            numpy_module = cp
+            fortran_mem_space = MemorySpace.GPU
+        else:
+            numpy_module = np
+            fortran_mem_space = MemorySpace.CPU
+        self.f_py = FortranPythonConversion(
+            npx,
+            npy,
+            npz,
+            is_,
+            ie,
+            js,
+            je,
+            isd,
+            ied,
+            jsd,
+            jed,
+            tracer_count,
+            numpy_module,
+        )
+
+        # Input pressure levels
+        ak = self.f_py._fortran_to_numpy(ak_cdata, [npz + 1])
+        bk = self.f_py._fortran_to_numpy(bk_cdata, [npz + 1])
+        # phis = self.f_py._fortran_to_numpy(phis_cdata, [npx, npy])
+        phis = self.f_py._fortran_to_python_trf(
+            phis_cdata,
+            [ied - isd + 1, jed - jsd + 1],
+        )
+
+        # Setup pyFV3's dynamical core
+        self.dycore = GeosDycoreWrapper(
+            fv_flags=fv_flags,
+            bdt=bdt,
+            comm=comm,
+            ak=ak,
+            bk=bk,
+            phis=phis,
+            backend=self.backend,
+            tracer_count=tracer_count,
+            fortran_mem_space=fortran_mem_space,
+        )
+
+        self._timings = {}
+
+    def finalize(self):
+        import json
+
+        if MPI.COMM_WORLD.Get_rank() == 0:
+            with open("pyfv3_timings_rank0.json", "w") as f:
+                json.dump(self._timings, f, indent=4)
+
+    def __call__(
+        self,
+        ng,
+        ptop,
+        ks,
+        layout_1,
+        layout_2,
+        adiabatic,
+        u: cffi.FFI.CData,
+        v: cffi.FFI.CData,
+        w: cffi.FFI.CData,
+        delz: cffi.FFI.CData,
+        pt: cffi.FFI.CData,
+        delp: cffi.FFI.CData,
+        q: cffi.FFI.CData,
+        ps: cffi.FFI.CData,
+        pe: cffi.FFI.CData,
+        pk: cffi.FFI.CData,
+        peln: cffi.FFI.CData,
+        pkz: cffi.FFI.CData,
+        phis: cffi.FFI.CData,
+        q_con: cffi.FFI.CData,
+        omga: cffi.FFI.CData,
+        ua: cffi.FFI.CData,
+        va: cffi.FFI.CData,
+        uc: cffi.FFI.CData,
+        vc: cffi.FFI.CData,
+        mfx: cffi.FFI.CData,
+        mfy: cffi.FFI.CData,
+        cx: cffi.FFI.CData,
+        cy: cffi.FFI.CData,
+        diss_est: cffi.FFI.CData,
+    ):
+        CUDAProfiler.start_cuda_profiler()
+        with TimedCUDAProfiler("Fortran -> Python", self._timings):
+            # Convert Fortran arrays to NumPy
+            state_in: Dict[str, PythonArray] = self.f_py.fortran_to_python(
+                # input
+                u,
+                v,
+                w,
+                delz,
+                pt,
+                delp,
+                q,
+                ps,
+                pe,
+                pk,
+                peln,
+                pkz,
+                phis,
+                q_con,
+                omga,
+                ua,
+                va,
+                uc,
+                vc,
+                mfx,
+                mfy,
+                cx,
+                cy,
+                diss_est,
+            )
+
+        # Run pyFV3
+        with TimedCUDAProfiler("Numerics", self._timings):
+            state_out, self._timings = self.dycore(
+                self._timings,
+                state_in["u"],
+                state_in["v"],
+                state_in["w"],
+                state_in["delz"],
+                state_in["pt"],
+                state_in["delp"],
+                state_in["q"],
+                state_in["ps"],
+                state_in["pe"],
+                state_in["pk"],
+                state_in["peln"],
+                state_in["pkz"],
+                state_in["phis"],
+                state_in["q_con"],
+                state_in["omga"],
+                state_in["ua"],
+                state_in["va"],
+                state_in["uc"],
+                state_in["vc"],
+                state_in["mfxd"],
+                state_in["mfyd"],
+                state_in["cxd"],
+                state_in["cyd"],
+                state_in["diss_estd"],
+            )
+
+        # Convert NumPy arrays back to Fortran
+        with TimedCUDAProfiler("Python -> Fortran", self._timings):
+            self.f_py.python_to_fortran(
+                # input
+                python_state=state_out,
+                # output
+                u_ptr=u,
+                v_ptr=v,
+                w_ptr=w,
+                delz_ptr=delz,
+                pt_ptr=pt,
+                delp_ptr=delp,
+                q_ptr=q,
+                ps_ptr=ps,
+                pe_ptr=pe,
+                pk_ptr=pk,
+                peln_ptr=peln,
+                pkz_ptr=pkz,
+                phis_ptr=phis,
+                q_con_ptr=q_con,
+                omga_ptr=omga,
+                ua_ptr=ua,
+                va_ptr=va,
+                uc_ptr=uc,
+                vc_ptr=vc,
+                mfxd_ptr=mfx,
+                mfyd_ptr=mfy,
+                cxd_ptr=cx,
+                cyd_ptr=cy,
+                diss_estd_ptr=diss_est,
+            )
+
+
+# Below is the entry point to the interface
+# ToDo: we should build the object outside of the sim loop from fortran
+# potentially by writing a pyfv3_interface_setup and caching the ptr Fortran side
+# or by having a central python interpreter object handled by CFFI to register against
+WRAPPER = None
+
+
+def pyfv3_run(
+    comm: MPI.Intercomm,
+    npx: int,
+    npy: int,
+    npz: int,
+    ntiles: int,
+    is_: int,
+    ie: int,
+    js: int,
+    je: int,
+    isd: int,
+    ied: int,
+    jsd: int,
+    jed: int,
+    bdt,
+    nq_tot,
+    ng,
+    ptop,
+    ks,
+    layout_1,
+    layout_2,
+    adiabatic,
+    u: cffi.FFI.CData,
+    v: cffi.FFI.CData,
+    w: cffi.FFI.CData,
+    delz: cffi.FFI.CData,
+    pt: cffi.FFI.CData,
+    delp: cffi.FFI.CData,
+    q: cffi.FFI.CData,
+    ps: cffi.FFI.CData,
+    pe: cffi.FFI.CData,
+    pk: cffi.FFI.CData,
+    peln: cffi.FFI.CData,
+    pkz: cffi.FFI.CData,
+    phis: cffi.FFI.CData,
+    q_con: cffi.FFI.CData,
+    omga: cffi.FFI.CData,
+    ua: cffi.FFI.CData,
+    va: cffi.FFI.CData,
+    uc: cffi.FFI.CData,
+    vc: cffi.FFI.CData,
+    mfx: cffi.FFI.CData,
+    mfy: cffi.FFI.CData,
+    cx: cffi.FFI.CData,
+    cy: cffi.FFI.CData,
+    diss_est: cffi.FFI.CData,
+):
+    global WRAPPER
+    if not WRAPPER:
+        raise RuntimeError("[GEOS WRAPPER] Bad init, did you call init?")
+    WRAPPER(
+        ng=ng,
+        ptop=ptop,
+        ks=ks,
+        layout_1=layout_1,
+        layout_2=layout_2,
+        adiabatic=adiabatic,
+        u=u,
+        v=v,
+        w=w,
+        delz=delz,
+        pt=pt,
+        delp=delp,
+        q=q,
+        ps=ps,
+        pe=pe,
+        pk=pk,
+        peln=peln,
+        pkz=pkz,
+        phis=phis,
+        q_con=q_con,
+        omga=omga,
+        ua=ua,
+        va=va,
+        uc=uc,
+        vc=vc,
+        mfx=mfx,
+        mfy=mfy,
+        cx=cx,
+        cy=cy,
+        diss_est=diss_est,
+    )
+
+
+def pyfv3_finalize():
+    if WRAPPER is not None:
+        WRAPPER.finalize()
+
+
+def pyfv3_init(
+    fv_flags: FVFlags,
+    comm: MPI.Intercomm,
+    npx: int,
+    npy: int,
+    npz: int,
+    ntiles: int,
+    is_: int,
+    ie: int,
+    js: int,
+    je: int,
+    isd: int,
+    ied: int,
+    jsd: int,
+    jed: int,
+    bdt,
+    nq_tot: int,
+    ak: cffi.FFI.CData,
+    bk: cffi.FFI.CData,
+    phis: cffi.FFI.CData,
+):
+    # Read in the backend
+    BACKEND = os.environ.get("GEOS_DSL_PYFV3_BACKEND", "st:dace:cpu:IJK")
+
+    global WRAPPER
+    if WRAPPER is not None:
+        raise RuntimeError("[GEOS WRAPPER] Double init")
+    WRAPPER = PYFV3_WRAPPER(
+        fv_flags=fv_flags,
+        bdt=bdt,
+        comm=comm,
+        npx=npx,
+        npy=npy,
+        npz=npz,
+        is_=is_,
+        ie=ie,
+        js=js,
+        je=je,
+        isd=isd,
+        ied=ied,
+        jsd=jsd,
+        jed=jed,
+        tracer_count=nq_tot,
+        backend=BACKEND,
+        ak_cdata=ak,
+        bk_cdata=bk,
+        phis_cdata=phis,
+    )
