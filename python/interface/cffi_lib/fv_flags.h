@@ -109,7 +109,7 @@ typedef struct
     unsigned char do_Held_Suarez;
     unsigned char do_reed_physics;
     unsigned char reed_cond_only;
-    unsigned char reproduce_sum;
+    // unsigned char reproduce_sum;
     unsigned char adjust_dry_mass;
     unsigned char fv_debug;
     unsigned char srf_init;

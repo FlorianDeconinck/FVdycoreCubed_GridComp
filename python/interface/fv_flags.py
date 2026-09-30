@@ -113,7 +113,7 @@ class FVFlags:
     do_Held_Suarez: bool
     do_reed_physics: bool
     reed_cond_only: bool
-    reproduce_sum: bool
+    # reproduce_sum: bool
     adjust_dry_mass: bool
     fv_debug: bool
     srf_init: bool

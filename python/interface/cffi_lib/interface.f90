@@ -121,7 +121,7 @@ module pyfv3_interface_mod
       logical(kind=c_bool) :: do_Held_Suarez
       logical(kind=c_bool) :: do_reed_physics
       logical(kind=c_bool) :: reed_cond_only
-      logical(kind=c_bool) :: reproduce_sum
+      ! logical(kind=c_bool) :: reproduce_sum
       logical(kind=c_bool) :: adjust_dry_mass
       logical(kind=c_bool) :: fv_debug
       logical(kind=c_bool) :: srf_init
@@ -357,7 +357,7 @@ contains
       c_fv_flags%do_Held_Suarez = merge(.true._c_bool, .false._c_bool, fv_flags%do_Held_Suarez)
       c_fv_flags%do_reed_physics = merge(.true._c_bool, .false._c_bool, fv_flags%do_reed_physics)
       c_fv_flags%reed_cond_only = merge(.true._c_bool, .false._c_bool, fv_flags%reed_cond_only)
-      c_fv_flags%reproduce_sum = merge(.true._c_bool, .false._c_bool, fv_flags%reproduce_sum)
+      ! c_fv_flags%reproduce_sum = merge(.true._c_bool, .false._c_bool, fv_flags%reproduce_sum)
       c_fv_flags%adjust_dry_mass = merge(.true._c_bool, .false._c_bool, fv_flags%adjust_dry_mass)
       c_fv_flags%fv_debug = merge(.true._c_bool, .false._c_bool, fv_flags%fv_debug)
       c_fv_flags%srf_init = merge(.true._c_bool, .false._c_bool, fv_flags%srf_init)
