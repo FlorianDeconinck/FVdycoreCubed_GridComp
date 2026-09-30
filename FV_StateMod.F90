@@ -38,7 +38,7 @@ module FV_StateMod
 
    use fv_diagnostics_mod, only: prt_maxmin, prt_minmax, range_check, &
                                  get_vorticity, updraft_helicity, calculate_shear_06, bunkers_vector, helicity_relative_CAPS
-#ifdef BUILD_GTFV3
+#ifdef BUILD_PYFV3
    use ieee_exceptions, only: ieee_get_halting_mode, ieee_set_halting_mode, ieee_all
    use pyfv3_interface_mod, only: pyfv3_interface_f_run
    use pyfv3_interface_mod, only: pyfv3_interface_f_init, pyfv3_interface_f_finalize, &
