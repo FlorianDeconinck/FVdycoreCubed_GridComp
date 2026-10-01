@@ -814,6 +814,8 @@ contains
   call WRITE_PARALLEL((/FV_Atm(1)%flagstruct%stretch_fac/)       , &
     format='("                 stretch_fac       =",F10.4)'  )
 
+  ! pyFV3 cannot run with in hydrostatic mode, so turn off
+  FV_Atm(1)%flagstruct%hydrostatic = .false.
   FV_HYDROSTATIC = FV_Atm(1)%flagstruct%hydrostatic
   DEBUG          = FV_Atm(1)%flagstruct%fv_debug
   call MAPL_GetResource(MAPL, DEBUG, 'DEBUG_STATE:', default=DEBUG, RC=STATUS)
