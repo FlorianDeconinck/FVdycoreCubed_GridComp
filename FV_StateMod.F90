@@ -1856,7 +1856,6 @@ subroutine FV_Run (STATE, EXPORT, CLOCK, GC, PLE0, RC)
      ! Mark FV setup complete
       fv_first_run = .false.
     endif
-    call MAPL_TimerOff(MAPL,"--STATE_TO_FV")
 
 ! Check Dry Mass (Apply fixer is option is enabled)
     if ( check_mass .OR. fix_mass ) then
@@ -2462,7 +2461,6 @@ subroutine FV_Run (STATE, EXPORT, CLOCK, GC, PLE0, RC)
 
     if (DEBUG) call debug_fv_state('After Dynamics Execution',STATE)
 
-  call MAPL_TimerOff(MAPL,"--FV_TO_STATE")
     RETURN_(ESMF_SUCCESS)
 
 end subroutine FV_Run
