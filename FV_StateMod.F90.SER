@@ -1745,7 +1745,7 @@ subroutine FV_Run (STATE, EXPORT, CLOCK, GC, PLE0, RC)
       !$ser data ptop=FV_Atm(1)%ptop
       !$ser data ks=FV_Atm(1)%ks
       !$ser data ncnst=FV_Atm(1)%ncnst
-      !$ser data n_split=state%nsplit
+      !$ser data n_split=state%n_split
       !$ser data u=FV_Atm(1)%u
       !$ser data v=FV_Atm(1)%v
       !$ser data w=FV_Atm(1)%w
