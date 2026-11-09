@@ -173,71 +173,72 @@ if(BUILD_SERIALBOX_SER)
   target_link_libraries(${this} PRIVATE ${SERIALBOX_FORTRAN_LIB} ${SERIALBOX_C_LIB})
 endif()
 
-ecbuild_add_executable (
-  TARGET StandAlone_FV3_Dycore.x
-  SOURCES StandAlone_FV3_Dycore.F90
-  LIBS ${this} OpenMP::OpenMP_Fortran)
+# We don't care about these extra exectuables, so we just skipt them.
+# ecbuild_add_executable (
+#   TARGET StandAlone_FV3_Dycore.x
+#   SOURCES StandAlone_FV3_Dycore.F90
+#   LIBS ${this} OpenMP::OpenMP_Fortran)
+# 
+# find_package (JeMalloc)
+# if(JeMalloc_FOUND)
+#   message(STATUS "JeMalloc found, using for StandAlone_FV3_Dycore.x")
+#   target_link_libraries (StandAlone_FV3_Dycore.x JeMalloc::JeMalloc)
+# endif()
+# 
+# ecbuild_add_executable (
+#   TARGET rs_scale.x
+#   SOURCES rs_scale.F90
+#   LIBS ${this} OpenMP::OpenMP_Fortran)
+# 
+# ecbuild_add_executable (
+#    TARGET StandAlone_AdvCore.x
+#    SOURCES StandAlone_AdvCore.F90
+#    LIBS ${this} OpenMP::OpenMP_Fortran)
+# 
+# ecbuild_add_executable (
+#    TARGET StandAlone_DynAdvCore.x
+#    SOURCES StandAlone_DynAdvCore.F90
+#    LIBS ${this} OpenMP::OpenMP_Fortran)
+# 
+# ecbuild_add_executable (
+#    TARGET c2c.x
+#    SOURCES c2c.F90
+#    LIBS ${this} OpenMP::OpenMP_Fortran)
+# 
+# ecbuild_add_executable (
+#    TARGET interp_restarts.x
+#    SOURCES interp_restarts.F90
+#    LIBS ${this} OpenMP::OpenMP_Fortran)
+# 
+# ecbuild_add_executable (
+#    TARGET interp_restarts_bin.x
+#    SOURCES interp_restarts_bin.F90
+#    LIBS ${this} OpenMP::OpenMP_Fortran)
 
-find_package (JeMalloc)
-if(JeMalloc_FOUND)
-  message(STATUS "JeMalloc found, using for StandAlone_FV3_Dycore.x")
-  target_link_libraries (StandAlone_FV3_Dycore.x JeMalloc::JeMalloc)
-endif()
-
-ecbuild_add_executable (
-  TARGET rs_scale.x
-  SOURCES rs_scale.F90
-  LIBS ${this} OpenMP::OpenMP_Fortran)
-
-ecbuild_add_executable (
-   TARGET StandAlone_AdvCore.x
-   SOURCES StandAlone_AdvCore.F90
-   LIBS ${this} OpenMP::OpenMP_Fortran)
-
-ecbuild_add_executable (
-   TARGET StandAlone_DynAdvCore.x
-   SOURCES StandAlone_DynAdvCore.F90
-   LIBS ${this} OpenMP::OpenMP_Fortran)
-
-ecbuild_add_executable (
-   TARGET c2c.x
-   SOURCES c2c.F90
-   LIBS ${this} OpenMP::OpenMP_Fortran)
-
-ecbuild_add_executable (
-   TARGET interp_restarts.x
-   SOURCES interp_restarts.F90
-   LIBS ${this} OpenMP::OpenMP_Fortran)
-
-ecbuild_add_executable (
-   TARGET interp_restarts_bin.x
-   SOURCES interp_restarts_bin.F90
-   LIBS ${this} OpenMP::OpenMP_Fortran)
-
-# If we are doing R4R8 we also need add_dependencies for both fms_r4 and fms_r8
-# for all our executables that link to ${this} because of the way we set up the
-# main library above.
-if (FV_PRECISION STREQUAL R4R8)
-  foreach(executable
-    StandAlone_FV3_Dycore.x
-    rs_scale.x
-    StandAlone_AdvCore.x
-    StandAlone_DynAdvCore.x
-    c2c.x
-    interp_restarts.x
-    interp_restarts_bin.x)
-
-    # fvdycore needs r4 .mod interfaces
-    get_target_property(inc_r4 FMS::fms_r4 INTERFACE_INCLUDE_DIRECTORIES)
-    target_include_directories(${executable} PRIVATE $<BUILD_INTERFACE:${inc_r4}>)
-
-    # But fvdycore should not *compile* with FMS::fms_r8 includes
-    target_link_libraries(${executable} $<LINK_ONLY:FMS::fms_r8>)
-
-    # This tells CMake that we need these targets built before we can build
-    add_dependencies(${executable} FMS::fms_r4 FMS::fms_r8)
-  endforeach()
-endif ()
+# # If we are doing R4R8 we also need add_dependencies for both fms_r4 and fms_r8
+# # for all our executables that link to ${this} because of the way we set up the
+# # main library above.
+# if (FV_PRECISION STREQUAL R4R8)
+#   foreach(executable
+#     StandAlone_FV3_Dycore.x
+#     rs_scale.x
+#     StandAlone_AdvCore.x
+#     StandAlone_DynAdvCore.x
+#     c2c.x
+#     interp_restarts.x
+#     interp_restarts_bin.x)
+# 
+#     # fvdycore needs r4 .mod interfaces
+#     get_target_property(inc_r4 FMS::fms_r4 INTERFACE_INCLUDE_DIRECTORIES)
+#     target_include_directories(${executable} PRIVATE $<BUILD_INTERFACE:${inc_r4}>)
+# 
+#     # But fvdycore should not *compile* with FMS::fms_r8 includes
+#     target_link_libraries(${executable} $<LINK_ONLY:FMS::fms_r8>)
+# 
+#     # This tells CMake that we need these targets built before we can build
+#     add_dependencies(${executable} FMS::fms_r4 FMS::fms_r8)
+#   endforeach()
+# endif ()
 
 
 if (BUILD_GEOS_GTFV3_INTERFACE)
